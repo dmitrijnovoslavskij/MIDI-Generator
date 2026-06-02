@@ -830,6 +830,28 @@ async function wrongVibe() {
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 setLang(lang);
+
+// Блокируем кнопку пока бэкенд не готов
+(function waitForBackend() {
+  const btn = document.getElementById('genBtn');
+  btn.disabled = true;
+  btn.textContent = '⏳ Запуск...';
+  showStatus('<span class="spinner"></span> Запуск бэкенда...', 0);
+
+  const check = () => {
+    fetch('/').then(r => {
+      if (r.ok) {
+        btn.disabled = false;
+        btn.textContent = btn.getAttribute('data-i18n') === 'generate' ? 'Генерировать' : btn.getAttribute('data-i18n');
+        setLang(lang); // восстановить i18n текст
+        showStatus('');
+      } else {
+        setTimeout(check, 1000);
+      }
+    }).catch(() => setTimeout(check, 1000));
+  };
+  check();
+})();
 </script>
 </body>
 </html>

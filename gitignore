@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+*.spec
+
+# Virtual environment
+runtime/venv/
+venv/
+.venv/
+
+# Node
+node_modules/
+
+# Electron build output
+out/
+dist/
+
+# App runtime data
+app/feedback.json
+midi_output/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/

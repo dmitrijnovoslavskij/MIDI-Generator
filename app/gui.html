@@ -1,0 +1,835 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MIDI Generator</title>
+<style>
+  :root {
+    --bg: #0e0e12;
+    --surface: #16161e;
+    --surface2: #1e1e2a;
+    --border: #2a2a3a;
+    --accent: #7c6af7;
+    --accent2: #a78bfa;
+    --green: #4ade80;
+    --text: #e2e0ff;
+    --muted: #6b6a8a;
+    --radius: 12px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 32px 16px 80px;
+    gap: 16px;
+  }
+  header {
+    text-align: center;
+    position: relative;
+    width: 100%;
+    max-width: 620px;
+  }
+  header h1 {
+    font-size: 26px;
+    font-weight: 700;
+    background: linear-gradient(135deg, var(--accent2), #c4b5fd);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  header p { color: var(--muted); font-size: 12px; margin-top: 4px; }
+
+  /* Language toggle */
+  .lang-toggle {
+    position: absolute;
+    top: 0;
+    right: 0;
+    display: flex;
+    gap: 4px;
+  }
+  .lang-btn {
+    padding: 4px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--surface2);
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .lang-btn:hover { border-color: var(--accent); color: var(--text); }
+  .lang-btn.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: white;
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 18px;
+    width: 100%;
+    max-width: 620px;
+  }
+  .card-label {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--muted);
+    margin-bottom: 10px;
+  }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 7px; }
+  .chip {
+    padding: 6px 13px;
+    border-radius: 20px;
+    border: 1px solid var(--border);
+    background: var(--surface2);
+    color: var(--muted);
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.15s;
+    user-select: none;
+  }
+  .chip:hover { border-color: var(--accent); color: var(--text); }
+  .chip.selected {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: white;
+    font-weight: 600;
+  }
+
+  .bpm-row { display: flex; align-items: center; gap: 14px; }
+  input[type=range] { flex: 1; accent-color: var(--accent); height: 4px; }
+  .bpm-val {
+    font-size: 22px; font-weight: 700;
+    color: var(--accent2); min-width: 52px; text-align: right;
+  }
+  .bpm-val span { font-size: 11px; color: var(--muted); display: block; text-align: right; }
+
+  .toggle-row { display: flex; gap: 8px; }
+  .toggle {
+    flex: 1; padding: 8px; text-align: center;
+    border-radius: 8px; border: 1px solid var(--border);
+    background: var(--surface2); color: var(--muted);
+    cursor: pointer; font-size: 13px; transition: all 0.15s;
+  }
+  .toggle.selected {
+    background: var(--accent); border-color: var(--accent);
+    color: white; font-weight: 600;
+  }
+
+  button.primary {
+    width: 100%; max-width: 620px;
+    padding: 14px;
+    background: var(--accent); color: white;
+    border: none; border-radius: var(--radius);
+    font-size: 15px; font-weight: 700;
+    cursor: pointer; transition: opacity 0.2s; letter-spacing: 0.3px;
+  }
+  button.primary:hover { opacity: 0.85; }
+  button.primary:disabled { opacity: 0.35; cursor: not-allowed; }
+
+  /* Result */
+  .result-card { display: none; width: 100%; max-width: 620px; }
+  .result-card.visible { display: block; }
+  .result-inner {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 18px;
+  }
+  .result-meta { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+  .tag {
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 20px; padding: 4px 12px;
+    font-size: 12px; color: var(--accent2); font-weight: 500;
+  }
+  .tag.bpm { color: #fb923c; }
+
+  /* Drag zone */
+  .drag-zone {
+    border: 2px dashed var(--border);
+    border-radius: 10px;
+    padding: 16px 14px;
+    margin-bottom: 14px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    cursor: grab;
+    transition: border-color 0.2s, background 0.2s;
+    user-select: none;
+    position: relative;
+  }
+  .drag-zone:hover, .drag-zone.dragging {
+    border-color: var(--accent);
+    background: rgba(124, 106, 247, 0.06);
+  }
+  .drag-zone:active { cursor: grabbing; }
+  .drag-icon {
+    font-size: 28px;
+    flex-shrink: 0;
+    filter: drop-shadow(0 0 6px rgba(124,106,247,0.4));
+  }
+  .drag-info { flex: 1; min-width: 0; }
+  .drag-filename {
+    font-size: 13px; font-weight: 600;
+    color: var(--text);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .drag-hint {
+    font-size: 11px; color: var(--muted); margin-top: 2px;
+  }
+  .drag-grab-icon {
+    font-size: 18px; color: var(--muted);
+    flex-shrink: 0; opacity: 0.6;
+  }
+  .drag-zone:hover .drag-grab-icon { opacity: 1; color: var(--accent2); }
+
+  /* Download fallback button */
+  .dl-btn {
+    display: block;
+    width: 100%;
+    padding: 8px;
+    text-align: center;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--accent2);
+    font-size: 13px;
+    font-weight: 600;
+    text-decoration: none;
+    margin-bottom: 14px;
+    transition: border-color 0.2s;
+    cursor: pointer;
+  }
+  .dl-btn:hover { border-color: var(--accent); color: var(--text); }
+
+  .waveform {
+    height: 44px; background: var(--surface2); border-radius: 6px;
+    margin-bottom: 14px;
+    display: flex; align-items: center; justify-content: center;
+    gap: 2px; padding: 0 10px; overflow: hidden;
+  }
+  .bar {
+    width: 3px; border-radius: 2px;
+    background: var(--accent); opacity: 0.7;
+    animation: pulse 1.2s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%,100% { transform: scaleY(0.25); opacity: 0.35; }
+    50% { transform: scaleY(1); opacity: 0.85; }
+  }
+
+  .fb-label {
+    font-size: 10px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 1px;
+    color: var(--muted); margin-bottom: 8px;
+  }
+  .fb-row { display: flex; gap: 8px; }
+  .fb-row input {
+    flex: 1; background: var(--surface2);
+    border: 1px solid var(--border); border-radius: 8px;
+    color: var(--text); font-size: 14px; padding: 10px 12px;
+    outline: none; font-family: inherit; transition: border-color 0.2s;
+  }
+  .fb-row input:focus { border-color: var(--accent); }
+  button.send-fb {
+    padding: 0 16px; background: var(--surface2);
+    border: 1px solid var(--border); border-radius: 8px;
+    color: var(--text); font-size: 13px; cursor: pointer;
+    transition: border-color 0.2s;
+  }
+  button.send-fb:hover { border-color: var(--accent); }
+  .understood { margin-top: 7px; font-size: 12px; color: var(--green); min-height: 16px; }
+
+  /* Bell / notifications */
+  .bell-wrap {
+    position: absolute;
+    top: 0;
+    left: 0;
+  }
+  .bell-btn {
+    position: relative;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 4px 9px;
+    font-size: 15px;
+    cursor: pointer;
+    line-height: 1;
+  }
+  .bell-btn:hover { border-color: var(--accent); }
+  .bell-badge {
+    position: absolute;
+    top: -5px; right: -5px;
+    background: #dc2626;
+    color: white;
+    font-size: 9px;
+    font-weight: 700;
+    border-radius: 10px;
+    padding: 1px 4px;
+    min-width: 14px;
+    text-align: center;
+    line-height: 1.4;
+  }
+  .notif-panel {
+    display: none;
+    position: absolute;
+    top: 36px; left: 0;
+    width: 280px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    z-index: 200;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    overflow: hidden;
+  }
+  .notif-panel.open { display: block; }
+  .notif-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--muted);
+  }
+  .notif-header button {
+    background: none;
+    border: none;
+    color: var(--muted);
+    font-size: 11px;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 4px;
+  }
+  .notif-header button:hover { color: var(--text); background: var(--surface2); }
+  .notif-list { max-height: 320px; overflow-y: auto; }
+  .notif-empty { padding: 20px 14px; font-size: 12px; color: var(--muted); text-align: center; }
+  .notif-item {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    font-size: 12px;
+    line-height: 1.5;
+  }
+  .notif-item:last-child { border-bottom: none; }
+  .notif-item .notif-time { color: var(--muted); font-size: 10px; margin-top: 2px; }
+  .notif-item.unread { background: rgba(124,106,247,0.06); }
+  .notif-item .notif-icon { margin-right: 4px; }
+
+  .status-bar {
+    position: fixed; bottom: 20px; left: 50%;
+    transform: translateX(-50%) translateY(60px);
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 24px; padding: 9px 20px; font-size: 13px;
+    transition: transform 0.3s cubic-bezier(0.34,1.56,0.64,1);
+    white-space: nowrap; z-index: 100;
+  }
+  .status-bar.visible { transform: translateX(-50%) translateY(0); }
+  .spinner {
+    display: inline-block; width: 13px; height: 13px;
+    border: 2px solid var(--border); border-top-color: var(--accent2);
+    border-radius: 50%; animation: spin 0.7s linear infinite;
+    vertical-align: middle; margin-right: 5px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🎹 MIDI Generator</h1>
+  <p data-i18n="subtitle">AI-powered melody generation</p>
+  <div class="lang-toggle">
+    <button class="lang-btn active" onclick="setLang('ru')">RU</button>
+    <button class="lang-btn" onclick="setLang('en')">EN</button>
+  </div>
+  <div class="bell-wrap">
+    <button class="bell-btn" onclick="toggleNotifs()" id="bellBtn">🔔<span class="bell-badge" id="bellBadge" style="display:none">0</span></button>
+    <div class="notif-panel" id="notifPanel">
+      <div class="notif-header"><span>Уведомления</span><button onclick="clearNotifs()">Очистить</button></div>
+      <div class="notif-list" id="notifList"><div class="notif-empty">Пока пусто</div></div>
+    </div>
+  </div>
+</header>
+
+<!-- VIBE -->
+<div class="card">
+  <div class="card-label" data-i18n="vibe">Вайб</div>
+  <div class="chips" id="vibeChips">
+    <div class="chip" data-group="vibe" data-val="trap">Trap</div>
+    <div class="chip" data-group="vibe" data-val="drill">Drill</div>
+    <div class="chip" data-group="vibe" data-val="phonk">Phonk</div>
+    <div class="chip" data-group="vibe" data-val="flex">Flex / Hype</div>
+    <div class="chip" data-group="vibe" data-val="dark">Dark / Evil</div>
+    <div class="chip" data-group="vibe" data-val="lofi">Lo-fi</div>
+    <div class="chip" data-group="vibe" data-val="chill">Chill</div>
+    <div class="chip" data-group="vibe" data-val="epic">Epic / Cinematic</div>
+    <div class="chip" data-group="vibe" data-val="bounce">Bounce / Club</div>
+    <div class="chip" data-group="vibe" data-val="romantic">Romantic</div>
+    <div class="chip" data-group="vibe" data-val="summer">Summer</div>
+    <div class="chip" data-group="vibe" data-val="happy">Happy</div>
+  </div>
+</div>
+
+<!-- MODE -->
+<div class="card">
+  <div class="card-label" data-i18n="mode">Лад</div>
+  <div class="toggle-row">
+    <div class="toggle" data-group="mode" data-val="auto" data-i18n="auto">Авто</div>
+    <div class="toggle selected" data-group="mode" data-val="minor">Minor</div>
+    <div class="toggle" data-group="mode" data-val="major">Major</div>
+  </div>
+</div>
+
+<!-- BPM -->
+<div class="card">
+  <div class="card-label">BPM</div>
+  <div class="bpm-row">
+    <input type="range" id="bpmSlider" min="60" max="160" value="120" oninput="updateBpm()">
+    <div class="bpm-val" id="bpmVal">120<span>BPM</span></div>
+  </div>
+</div>
+
+<!-- BARS -->
+<div class="card">
+  <div class="card-label" data-i18n="bars">Такты</div>
+  <div class="toggle-row">
+    <div class="toggle selected" data-group="bars" data-val="8" data-i18n="bars8">8 тактов</div>
+    <div class="toggle" data-group="bars" data-val="16" data-i18n="bars16">16 тактов</div>
+  </div>
+</div>
+
+<button class="primary" id="genBtn" onclick="generate()" data-i18n="generate">Генерировать</button>
+
+<!-- RESULT -->
+<div class="result-card" id="resultCard">
+  <div class="result-inner">
+    <div class="result-meta" id="resultMeta"></div>
+
+    <!-- Drag-and-drop zone -->
+    <div class="drag-zone" id="dragZone"
+         onmousedown="onNativeDragStart(event)">
+      <div class="drag-icon">🎵</div>
+      <div class="drag-info">
+        <div class="drag-filename" id="dragFilename">track.mid</div>
+        <div class="drag-hint" id="dragHint" data-i18n="dragHint">Перетащи в FL Studio или DAW</div>
+      </div>
+      <div class="drag-grab-icon">⠿</div>
+    </div>
+
+    <!-- Download fallback -->
+    <a class="dl-btn" id="dlBtn" href="#" download data-i18n="download">⬇ Скачать MIDI</a>
+
+    <div class="waveform" id="waveform"></div>
+
+    <div class="fb-label" data-i18n="feedbackLabel">Фидбек</div>
+    <div class="fb-row"><button class="send-fb" style="flex:1" onclick="sendQuickFeedback('good')">👍 Нравится</button><button class="send-fb" style="flex:1" onclick="sendQuickFeedback('bad')">👎 Не нравится</button></div>
+    <div class="fb-row" style="margin-top:8px"><button class="send-fb" style="flex:1" onclick="sendTextFeedback('слишком медленно')">⏩ Быстрее</button><button class="send-fb" style="flex:1" onclick="sendTextFeedback('слишком быстро')">⏪ Медленнее</button></div>
+    <div class="fb-row" style="margin-top:8px"><button class="send-fb" style="flex:1" onclick="sendTextFeedback('бас слабый')">🔊 Больше баса</button><button class="send-fb" style="flex:1" onclick="sendTextFeedback('слишком много баса')">🔉 Меньше баса</button></div>
+<div class="fb-row" style="margin-top:8px"><button class="send-fb" style="flex:1" onclick="sendTextFeedback('мелодия однообразная')">🎵 Больше разнообразия</button><button class="send-fb" style="flex:1" onclick="sendTextFeedback('мелодия хаотичная')">🎵 Меньше разнообразия</button></div>
+<div class="fb-row" style="margin-top:8px"><button class="send-fb" style="flex:1" onclick="sendTextFeedback('мелодия прерывистая')">🎵 Плотнее мелодию</button><button class="send-fb" style="flex:1" onclick="sendTextFeedback('слишком много нот')">🎵 Реже мелодию</button></div>
+<div class="fb-row" style="margin-top:8px"><button class="send-fb" style="flex:1" onclick="sendTextFeedback('аккордов мало')">🎹 Больше аккордов</button><button class="send-fb" style="flex:1" onclick="sendTextFeedback('слишком много аккордов')">🎹 Меньше аккордов</button></div>
+<div class="fb-row" style="margin-top:8px"><button class="send-fb" style="flex:1" onclick="sendTextFeedback('хочу major')">🙂 Мажорнее</button><button class="send-fb" style="flex:1" onclick="sendTextFeedback('хочу minor')">😈 Минорнее</button></div>
+    
+<div class="fb-row" style="margin-top:8px">
+  <button class="send-fb" style="flex:1" onclick="wrongVibe()">🚫 Не тот вайб</button>
+</div>
+
+<div class="understood" id="understood"></div>
+  </div>
+</div>
+
+<div class="status-bar" id="statusBar"></div>
+
+<script>
+// ── Notifications (in-memory only, no disk) ──────────────────────────────────
+const notifications = [];
+let unreadCount = 0;
+let notifOpen = false;
+
+function pushNotif(icon, text) {
+  const now = new Date();
+  const time = now.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+  notifications.unshift({ icon, text, time, unread: true });
+  if (notifications.length > 50) notifications.pop();
+  unreadCount++;
+  renderNotifs();
+}
+
+function renderNotifs() {
+  const list = document.getElementById('notifList');
+  const badge = document.getElementById('bellBadge');
+
+  badge.textContent = unreadCount > 9 ? '9+' : unreadCount;
+  badge.style.display = unreadCount > 0 ? 'inline' : 'none';
+
+  if (notifications.length === 0) {
+    list.innerHTML = '<div class="notif-empty">Пока пусто</div>';
+    return;
+  }
+
+  list.innerHTML = notifications.map(n => `
+    <div class="notif-item ${n.unread ? 'unread' : ''}">
+      <span class="notif-icon">${n.icon}</span>${n.text}
+      <div class="notif-time">${n.time}</div>
+    </div>
+  `).join('');
+}
+
+function toggleNotifs() {
+  notifOpen = !notifOpen;
+  document.getElementById('notifPanel').classList.toggle('open', notifOpen);
+  if (notifOpen) {
+    // mark all read
+    notifications.forEach(n => n.unread = false);
+    unreadCount = 0;
+    renderNotifs();
+  }
+}
+
+function clearNotifs() {
+  notifications.length = 0;
+  unreadCount = 0;
+  renderNotifs();
+}
+
+// Close panel on outside click
+document.addEventListener('click', e => {
+  if (notifOpen && !document.getElementById('bellBtn').contains(e.target) &&
+      !document.getElementById('notifPanel').contains(e.target)) {
+    notifOpen = false;
+    document.getElementById('notifPanel').classList.remove('open');
+  }
+});
+
+// ── i18n ────────────────────────────────────────────────────────────────────
+const STRINGS = {
+  ru: {
+    subtitle:      "AI-powered melody generation",
+    vibe:          "Вайб",
+    mode:          "Лад",
+    auto:          "Авто",
+    bars:          "Такты",
+    bars8:         "8 тактов",
+    bars16:        "16 тактов",
+    generate:      "Генерировать",
+    generating:    "Генерирую...",
+    dragHint:      "Перетащи в FL Studio или DAW",
+    download:      "⬇ Скачать MIDI",
+    feedbackLabel: "Фидбек",
+    fbPlaceholder: "Что думаешь? Можно на русском...",
+    statusOk:      "✅ Готово!",
+    statusDrag:    "🎵 Перетащи файл в FL Studio",
+    dragNotSupported: "Перетаскивание не поддерживается браузером — используй кнопку скачать",
+  },
+  en: {
+    subtitle:      "AI-powered melody generation",
+    vibe:          "Vibe",
+    mode:          "Scale",
+    auto:          "Auto",
+    bars:          "Bars",
+    bars8:         "8 bars",
+    bars16:        "16 bars",
+    generate:      "Generate",
+    generating:    "Generating...",
+    dragHint:      "Drag into FL Studio or your DAW",
+    download:      "⬇ Download MIDI",
+    feedbackLabel: "Feedback",
+    fbPlaceholder: "What do you think?",
+    statusOk:      "✅ Done!",
+    statusDrag:    "🎵 Drag the file into FL Studio",
+    dragNotSupported: "Drag & drop not supported by browser — use the download button",
+  }
+};
+
+let lang = localStorage.getItem('midi_lang') || 'ru';
+
+function t(key) {
+  return STRINGS[lang][key] || STRINGS['ru'][key] || key;
+}
+
+function setLang(l) {
+  lang = l;
+  localStorage.setItem('midi_lang', l);
+  document.querySelectorAll('.lang-btn').forEach(b => {
+    b.classList.toggle('active', b.textContent === l.toUpperCase());
+  });
+  applyLang();
+}
+
+function applyLang() {
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    const key = el.dataset.i18n;
+    el.textContent = t(key);
+  });
+  document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
+    el.placeholder = t(el.dataset.i18nPlaceholder);
+  });
+  // Re-apply generating state if active
+  const btn = document.getElementById('genBtn');
+  if (btn.disabled) btn.textContent = t('generating');
+}
+
+// ── Chips / toggles ──────────────────────────────────────────────────────────
+document.querySelectorAll('.chip, .toggle').forEach(el => {
+  el.addEventListener('click', () => {
+    const group = el.dataset.group;
+    if (el.classList.contains('chip')) {
+      const wasSelected = el.classList.contains('selected');
+      document.querySelectorAll(`.chip[data-group="${group}"]`).forEach(c => c.classList.remove('selected'));
+      if (!wasSelected) el.classList.add('selected');
+    } else {
+      document.querySelectorAll(`.toggle[data-group="${group}"]`).forEach(c => c.classList.remove('selected'));
+      el.classList.add('selected');
+    }
+  });
+});
+
+function getVal(group) {
+  const el = document.querySelector(`[data-group="${group}"].selected`);
+  return el ? el.dataset.val : null;
+}
+
+function updateBpm() {
+  document.getElementById('bpmVal').innerHTML =
+    document.getElementById('bpmSlider').value + '<span>BPM</span>';
+}
+
+const VIBE_PRESETS = {
+  trap:     { mode: 'minor', bpm: 138 },
+  drill:    { mode: 'minor', bpm: 140 },
+  phonk:    { mode: 'minor', bpm: 145 },
+  flex:     { mode: 'minor', bpm: 148 },
+  dark:     { mode: 'minor', bpm: 75 },
+  lofi:     { mode: 'minor', bpm: 80 },
+  chill:    { mode: 'minor', bpm: 85 },
+  epic:     { mode: 'minor', bpm: 95 },
+  bounce:   { mode: 'major', bpm: 128 },
+  romantic: { mode: 'major', bpm: 90 },
+  summer:   { mode: 'major', bpm: 110 },
+  happy:    { mode: 'major', bpm: 118 },
+};
+
+document.querySelectorAll('.chip[data-group="vibe"]').forEach(chip => {
+  chip.addEventListener('click', () => {
+    const preset = VIBE_PRESETS[chip.dataset.val];
+    if (!preset) return;
+    document.querySelectorAll('.toggle[data-group="mode"]').forEach(t => t.classList.remove('selected'));
+    document.querySelector(`.toggle[data-group="mode"][data-val="${preset.mode}"]`).classList.add('selected');
+    document.getElementById('bpmSlider').value = preset.bpm;
+    updateBpm();
+  });
+});
+
+// ── State ────────────────────────────────────────────────────────────────────
+let lastMusic = null;
+let lastFilePath = null;  // абсолютный путь на сервере
+
+// ── Status bar ───────────────────────────────────────────────────────────────
+function showStatus(msg, duration = 3000) {
+  const bar = document.getElementById('statusBar');
+  bar.innerHTML = msg;
+  bar.classList.add('visible');
+  if (duration > 0) setTimeout(() => bar.classList.remove('visible'), duration);
+}
+
+// ── Waveform ─────────────────────────────────────────────────────────────────
+function buildWaveform() {
+  const wf = document.getElementById('waveform');
+  wf.innerHTML = '';
+  for (let i = 0; i < 50; i++) {
+    const bar = document.createElement('div');
+    bar.className = 'bar';
+    bar.style.height = (8 + Math.random() * 30) + 'px';
+    bar.style.animationDelay = (Math.random() * 1.2) + 's';
+    bar.style.animationDuration = (0.7 + Math.random() * 0.8) + 's';
+    wf.appendChild(bar);
+  }
+}
+
+// ── Drag & Drop (Electron native) ────────────────────────────────────────────
+// HTML drag & drop не может передать реальный файл в нативное приложение.
+// Используем Electron's event.sender.startDrag() через preload.js —
+// это единственный способ перетащить файл в FL Studio / DAW из Electron.
+
+function onNativeDragStart(e) {
+  if (!lastFilePath) return;
+  if (e.button !== 0) return; // только левая кнопка
+
+  const zone = document.getElementById('dragZone');
+  zone.classList.add('dragging');
+
+  const startX = e.clientX, startY = e.clientY;
+
+  function onMouseMove(mv) {
+    const dx = mv.clientX - startX, dy = mv.clientY - startY;
+    if (Math.sqrt(dx * dx + dy * dy) > 4) {
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+      zone.classList.remove('dragging');
+      window.electronAPI.startDrag(lastFilePath);
+      showStatus(t('statusDrag'));
+    }
+  }
+
+  function onMouseUp() {
+    document.removeEventListener('mousemove', onMouseMove);
+    document.removeEventListener('mouseup', onMouseUp);
+    zone.classList.remove('dragging');
+  }
+
+  document.addEventListener('mousemove', onMouseMove);
+  document.addEventListener('mouseup', onMouseUp);
+}
+
+// ── Generate ──────────────────────────────────────────────────────────────────
+async function generate() {
+  const vibe = getVal('vibe') || 'any';
+  const mode = getVal('mode');
+  const bpm  = parseInt(document.getElementById('bpmSlider').value);
+  const bars = parseInt(getVal('bars'));
+
+  const btn = document.getElementById('genBtn');
+  btn.disabled = true;
+  btn.textContent = t('generating');
+  showStatus('<span class="spinner"></span>' + t('generating'), 0);
+  document.getElementById('understood').textContent = '';
+
+  try {
+    const res = await fetch('/generate', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ vibe, mode, bpm, bars })
+    });
+    const data = await res.json();
+    lastMusic    = data.music;
+    lastFilePath = data.file;
+
+    // Update meta tags
+    document.getElementById('resultMeta').innerHTML = `
+      <span class="tag">🎵 ${data.music.key} ${data.music.mode}</span>
+      <span class="tag bpm">♩ ${data.music.bpm} BPM</span>
+      ${vibe !== 'any' ? `<span class="tag">${vibe}</span>` : ''}
+    `;
+
+    // Update drag zone
+    const filename = data.file.split(/[/\\]/).pop();
+    document.getElementById('dragFilename').textContent = filename;
+    document.getElementById('dragHint').textContent = t('dragHint');
+
+    // Update download button
+    const dlBtn = document.getElementById('dlBtn');
+    dlBtn.href = '/download?path=' + encodeURIComponent(data.file);
+    dlBtn.download = filename;
+    dlBtn.textContent = t('download');
+
+    buildWaveform();
+    document.getElementById('resultCard').classList.add('visible');
+    showStatus(t('statusOk'));
+    pushNotif('🎵', `Трек готов: ${data.music.key} ${data.music.mode}, ${data.music.bpm} BPM${vibe !== 'any' ? ', ' + vibe : ''}`);
+  } catch(e) {
+    showStatus('❌ ' + e.message);
+    pushNotif('❌', 'Ошибка генерации: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = t('generate');
+  }
+}
+
+// ── Feedback ──────────────────────────────────────────────────────────────────
+async function sendFeedback() {
+  const text = document.getElementById('fbInput').value.trim();
+  if (!text || !lastMusic) return;
+  document.getElementById('understood').textContent = '...';
+  try {
+    const res = await fetch('/feedback', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ key: lastMusic.key, mode: lastMusic.mode, text })
+    });
+    const data = await res.json();
+    document.getElementById('understood').textContent = '✨ ' + data.understood;
+    document.getElementById('fbInput').value = '';
+  } catch(e) {
+    document.getElementById('understood').textContent = '❌ Error';
+  }
+}
+
+
+async function sendQuickFeedback(type) {
+  if (!lastMusic) return;
+  document.getElementById('understood').textContent = '...';
+  try {
+    const res = await fetch('/feedback', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        key: lastMusic.key,
+        mode: lastMusic.mode,
+        text: type === 'good' ? '👍 Good' : '👎 Bad'
+      })
+    });
+    const data = await res.json();
+    document.getElementById('understood').textContent = '✨ ' + (data.understood || 'Спасибо за отзыв');
+  } catch(e) {
+    document.getElementById('understood').textContent = '❌ Error';
+  }
+}
+
+
+
+async function sendTextFeedback(text, extra = {}) {
+  if (!lastMusic) return;
+
+  document.getElementById('understood').textContent = '...';
+
+  try {
+    const res = await fetch('/feedback', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        key: lastMusic.key,
+        mode: lastMusic.mode,
+        text,
+        ...extra
+      })
+    });
+
+    const data = await res.json();
+    document.getElementById('understood').textContent =
+      '✨ ' + (data.understood || 'Спасибо за отзыв');
+
+    return data;
+  } catch (e) {
+    document.getElementById('understood').textContent = '❌ Error';
+  }
+}
+
+async function wrongVibe() {
+  const result = await sendTextFeedback(
+    'не тот вайб',
+    { vibe_mismatch: true }
+  );
+
+  if (result) {
+    setTimeout(() => generate(), 400);
+  }
+}
+
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+setLang(lang);
+</script>
+</body>
+</html>

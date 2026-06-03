@@ -26,46 +26,22 @@ from pathlib import Path
 
 # ─── SSL FIX (macOS python.org builds lack system certs) ──────────────────────
 def _make_ssl_context() -> ssl.SSLContext:
-    """Returns an SSL context that works on macOS python.org builds.
-
-    Priority:
-      1. certifi bundle (if installed in the venv or system)
-      2. macOS built-in cert store via /etc/ssl or the python.org Install Certificates.command result
-      3. Unverified fallback (logs a warning — only reached if all else fails)
-    """
-    # 1. Try certifi
     try:
         import certifi
-        ctx = ssl.create_default_context(cafile=certifi.where())
-        return ctx
+        return ssl.create_default_context(cafile=certifi.where())
     except ImportError:
         pass
-
-    # 2. Try default context (works if certs were installed via Install Certificates.command)
     try:
-        ctx = ssl.create_default_context()
-        # Quick probe — if it can load, certs are present
-        return ctx
+        return ssl.create_default_context()
     except Exception:
         pass
-
-    # 3. Unverified fallback
     import warnings
-    warnings.warn(
-        "SSL certificates not found — falling back to unverified HTTPS. "
-        "Run /Applications/Python*/Install\\ Certificates.command to fix this.",
-        RuntimeWarning,
-        stacklevel=2,
-    )
-    ctx = ssl._create_unverified_context()
-    return ctx
-
+    warnings.warn("SSL certs not found — using unverified context", RuntimeWarning)
+    return ssl._create_unverified_context()
 
 _SSL_CTX = _make_ssl_context()
 
-
 def _urlopen(req, timeout=30):
-    """Drop-in for urllib.request.urlopen that passes our SSL context."""
     return urllib.request.urlopen(req, timeout=timeout, context=_SSL_CTX)
 
 # ─── CONFIG — замени эти значения ─────────────────────────────────────────────
@@ -80,7 +56,26 @@ IS_WINDOWS = platform.system() == "Windows"
 IS_MAC     = platform.system() == "Darwin"
 ARCH       = platform.machine().lower()  # "arm64" или "x86_64"
 
-ELECTRON_VERSION = "v28.2.0"
+# ─── Pick Electron version based on macOS version ─────────────────────────────
+# Electron 33+ requires macOS 11 (Big Sur).  Electron 34+ requires macOS 12 (Monterey).
+# We auto-select the newest version compatible with the running OS.
+def _pick_electron_version() -> str:
+    if IS_MAC:
+        try:
+            mac_ver = tuple(int(x) for x in platform.mac_ver()[0].split(".")[:2])
+            if mac_ver >= (13, 0):   # Ventura+
+                return "v33.3.1"
+            elif mac_ver >= (12, 0): # Monterey
+                return "v33.3.1"
+            elif mac_ver >= (11, 0): # Big Sur
+                return "v33.3.1"
+            else:                    # Catalina 10.15 or older
+                return "v32.3.3"
+        except Exception:
+            pass
+    return "v33.3.1"  # Windows / Linux / unknown
+
+ELECTRON_VERSION = _pick_electron_version()
 
 # Папка куда всё устанавливается — рядом с launcher'ом
 if IS_WINDOWS:
@@ -481,6 +476,18 @@ class LauncherApp(tk.Tk):
         self._set_status("Checking Electron...")
         self._set_progress(72)
 
+        # If a different (old) version of Electron is cached, wipe it so we re-download
+        electron_ver_file = ELECTRON_DIR / "installed_version.txt"
+        if ELECTRON_DIR.exists() and electron_ver_file.exists():
+            cached_ver = electron_ver_file.read_text().strip()
+            if cached_ver != ELECTRON_VERSION:
+                self._log_line(f"→ Electron version mismatch ({cached_ver} → {ELECTRON_VERSION}), re-downloading...")
+                shutil.rmtree(ELECTRON_DIR, ignore_errors=True)
+        elif ELECTRON_DIR.exists() and not electron_ver_file.exists():
+            # No version stamp — could be v28; wipe to be safe
+            self._log_line("→ Electron version unknown, re-downloading...")
+            shutil.rmtree(ELECTRON_DIR, ignore_errors=True)
+
         if not ELECTRON_BIN.exists():
             self._set_status(f"Downloading Electron {ELECTRON_VERSION}...")
             self._log_line(f"→ Downloading Electron {ELECTRON_VERSION}...")
@@ -524,12 +531,21 @@ class LauncherApp(tk.Tk):
                 zf.extractall(ELECTRON_DIR)
             electron_zip.unlink(missing_ok=True)
 
-            if not IS_WINDOWS and ELECTRON_BIN.exists():
-                os.chmod(ELECTRON_BIN, 0o755)
+            if not IS_WINDOWS:
+                # Remove macOS quarantine attribute — Gatekeeper blocks/crashes
+                # unsigned binaries downloaded from the internet without this.
+                run_silent(["xattr", "-rd", "com.apple.quarantine", str(ELECTRON_DIR)])
 
+                # Ensure the binary and all .dylib / framework files are executable
+                run_silent(["chmod", "-R", "u+x", str(ELECTRON_DIR)])
+                if ELECTRON_BIN.exists():
+                    os.chmod(ELECTRON_BIN, 0o755)
+
+            # Write version stamp so future runs can detect a stale cache
+            (ELECTRON_DIR / "installed_version.txt").write_text(ELECTRON_VERSION)
             self._log_line("✓ Electron installed", "ok")
         else:
-            self._log_line("✓ Electron exists", "ok")
+            self._log_line(f"✓ Electron exists ({ELECTRON_VERSION})", "ok")
 
         # ── 7. Init files ─────────────────────────────────────────────────────
         init_py = APP_DIR / "app" / "__init__.py"

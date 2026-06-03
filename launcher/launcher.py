@@ -550,8 +550,16 @@ class LauncherApp(tk.Tk):
                         downloaded_bytes += len(chunk)
                         electron_progress(downloaded_bytes, total)
 
-            with zipfile.ZipFile(electron_zip, "r") as zf:
-                zf.extractall(ELECTRON_DIR)
+            # На macOS используем системный unzip — он сохраняет симлинки.
+            # Python's zipfile.extractall() записывает симлинки как текст,
+            # из-за чего Electron Framework.framework ломается.
+            if IS_MAC:
+                result = run_silent(["unzip", "-q", "-o", str(electron_zip), "-d", str(ELECTRON_DIR)])
+                if result.returncode != 0:
+                    raise RuntimeError(f"unzip failed:\n{result.stderr}")
+            else:
+                with zipfile.ZipFile(electron_zip, "r") as zf:
+                    zf.extractall(ELECTRON_DIR)
             electron_zip.unlink(missing_ok=True)
 
             if not IS_WINDOWS:

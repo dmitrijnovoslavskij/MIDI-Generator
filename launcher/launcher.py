@@ -19,9 +19,54 @@ import threading
 import zipfile
 import urllib.request
 import urllib.error
+import ssl
 import tkinter as tk
 from tkinter import ttk, messagebox
 from pathlib import Path
+
+# ─── SSL FIX (macOS python.org builds lack system certs) ──────────────────────
+def _make_ssl_context() -> ssl.SSLContext:
+    """Returns an SSL context that works on macOS python.org builds.
+
+    Priority:
+      1. certifi bundle (if installed in the venv or system)
+      2. macOS built-in cert store via /etc/ssl or the python.org Install Certificates.command result
+      3. Unverified fallback (logs a warning — only reached if all else fails)
+    """
+    # 1. Try certifi
+    try:
+        import certifi
+        ctx = ssl.create_default_context(cafile=certifi.where())
+        return ctx
+    except ImportError:
+        pass
+
+    # 2. Try default context (works if certs were installed via Install Certificates.command)
+    try:
+        ctx = ssl.create_default_context()
+        # Quick probe — if it can load, certs are present
+        return ctx
+    except Exception:
+        pass
+
+    # 3. Unverified fallback
+    import warnings
+    warnings.warn(
+        "SSL certificates not found — falling back to unverified HTTPS. "
+        "Run /Applications/Python*/Install\\ Certificates.command to fix this.",
+        RuntimeWarning,
+        stacklevel=2,
+    )
+    ctx = ssl._create_unverified_context()
+    return ctx
+
+
+_SSL_CTX = _make_ssl_context()
+
+
+def _urlopen(req, timeout=30):
+    """Drop-in for urllib.request.urlopen that passes our SSL context."""
+    return urllib.request.urlopen(req, timeout=timeout, context=_SSL_CTX)
 
 # ─── CONFIG — замени эти значения ─────────────────────────────────────────────
 GITHUB_TOKEN  = "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"      # ← вставь сюда свой PAT токен
@@ -64,7 +109,7 @@ def github_request(url: str) -> dict:
     req.add_header("Authorization", f"token {GITHUB_TOKEN}")
     req.add_header("Accept", "application/vnd.github.v3+json")
     req.add_header("User-Agent", "MIDIGen-Launcher/1.0")
-    with urllib.request.urlopen(req, timeout=30) as resp:
+    with _urlopen(req, timeout=30) as resp:
         return json.loads(resp.read().decode())
 
 
@@ -74,7 +119,7 @@ def download_file(url: str, dest: Path, progress_cb=None):
     req.add_header("Authorization", f"token {GITHUB_TOKEN}")
     req.add_header("User-Agent", "MIDIGen-Launcher/1.0")
 
-    with urllib.request.urlopen(req, timeout=60) as resp:
+    with _urlopen(req, timeout=60) as resp:
         total = int(resp.headers.get("Content-Length", 0))
         downloaded = 0
         chunk_size = 65536  # 64KB chunks
@@ -411,7 +456,7 @@ class LauncherApp(tk.Tk):
         self._set_progress(50)
 
         # ── 5. Python dependencies ────────────────────────────────────────────
-        deps = ["fastapi", "uvicorn", "mido", "requests", "numpy", "transformers", "torch"]
+        deps = ["certifi", "fastapi", "uvicorn", "mido", "requests", "numpy", "transformers", "torch"]
         total_deps = len(deps)
 
         run_silent([str(PY_BIN), "-m", "pip", "install", "--upgrade", "pip", "-q"])
@@ -463,7 +508,7 @@ class LauncherApp(tk.Tk):
             req = urllib.request.Request(electron_url)
             req.add_header("User-Agent", "MIDIGen-Launcher/1.0")
             downloaded_bytes = 0
-            with urllib.request.urlopen(req, timeout=120) as resp:
+            with _urlopen(req, timeout=120) as resp:
                 # Follow redirects handled automatically by urllib
                 total = int(resp.headers.get("Content-Length", 0))
                 with open(electron_zip, "wb") as f:

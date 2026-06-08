@@ -1,7 +1,7 @@
 """
 MIDI Gen Launcher
 -----------------
-Downloads the latest version from a private GitHub repository
+Downloads the latest version from a public GitHub repository
 and launches the Electron app. Works on Windows and macOS.
 
 Build to exe/app with PyInstaller:
@@ -44,12 +44,11 @@ _SSL_CTX = _make_ssl_context()
 def _urlopen(req, timeout=30):
     return urllib.request.urlopen(req, timeout=timeout, context=_SSL_CTX)
 
-# ─── CONFIG — замени эти значения ─────────────────────────────────────────────
-GITHUB_TOKEN  = "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"      # ← вставь сюда свой PAT токен
-GITHUB_OWNER  = "dmitrijnovoslavskij"             # ← твой GitHub username
-GITHUB_REPO   = "AI-MIDI-Generator"            # ← название репозитория
-GITHUB_BRANCH = "main"                      # ← ветка (main или master)
-APP_VERSION_FILE = "version.txt"            # ← файл с версией в репо (опционально)
+# ─── CONFIG ───────────────────────────────────────────────────────────────────
+GITHUB_OWNER  = "dmitrijnovoslavskij"
+GITHUB_REPO   = "MIDI-Generator"
+GITHUB_BRANCH = "main"
+APP_VERSION_FILE = "version.txt"
 # ──────────────────────────────────────────────────────────────────────────────
 
 IS_WINDOWS = platform.system() == "Windows"
@@ -115,9 +114,8 @@ ELECTRON_BIN = ELECTRON_WIN if IS_WINDOWS else ELECTRON_MAC
 # ─── GitHub API helpers ───────────────────────────────────────────────────────
 
 def github_request(url: str) -> dict:
-    """Makes authenticated request to GitHub API."""
+    """Makes request to public GitHub API (no auth needed)."""
     req = urllib.request.Request(url)
-    req.add_header("Authorization", f"token {GITHUB_TOKEN}")
     req.add_header("Accept", "application/vnd.github.v3+json")
     req.add_header("User-Agent", "MIDIGen-Launcher/1.0")
     with _urlopen(req, timeout=30) as resp:
@@ -127,7 +125,6 @@ def github_request(url: str) -> dict:
 def download_file(url: str, dest: Path, progress_cb=None):
     """Downloads a file with progress callback(downloaded_bytes, total_bytes)."""
     req = urllib.request.Request(url)
-    req.add_header("Authorization", f"token {GITHUB_TOKEN}")
     req.add_header("User-Agent", "MIDIGen-Launcher/1.0")
 
     with _urlopen(req, timeout=60) as resp:
@@ -389,7 +386,7 @@ class LauncherApp(tk.Tk):
             self._set_version(f"v{remote_ver[:7]}")
         except urllib.error.HTTPError as e:
             if e.code == 401:
-                raise RuntimeError("GitHub token invalid or expired (401)")
+                raise RuntimeError("GitHub API: access denied (401) — check if repo is public")
             elif e.code == 404:
                 raise RuntimeError(f"Repository not found: {GITHUB_OWNER}/{GITHUB_REPO}")
             raise RuntimeError(f"GitHub API error: {e.code}")

@@ -987,20 +987,26 @@ function ticksToSeconds(ticks, bpm, tpb) {
 }
 
 // ── Playback ───────────────────────────────────────────────────────────────
+let isLoopRestart = false;
 async function startPlayback() {
   if (!currentMusic) return;
-  await Tone.start();
+  if (!isLoopRestart) {
+    await Tone.start();
+  }
   Tone.Transport.stop();
   Tone.Transport.cancel();
 
-  // Dispose old synths
-  Object.values(synths).forEach(s => { try { s.dispose(); } catch(e){} });
-  synths = {
-    melody: makePianoSynth(),
-    chord_track: makeChordSynth(),
-    bass: makeBassSynth(),
-    arp: makePianoSynth(),
-  };
+  // Dispose old synths only on fresh start
+  if (!isLoopRestart) {
+    Object.values(synths).forEach(s => { try { s.dispose(); } catch(e){} });
+    synths = {
+      melody: makePianoSynth(),
+      chord_track: makeChordSynth(),
+      bass: makeBassSynth(),
+      arp: makePianoSynth(),
+    };
+  }
+  isLoopRestart = false;
 
   const { tracks, bpm, tpb } = currentMusic;
   // Schedule purely in seconds — do NOT set Transport.bpm to avoid
@@ -1041,19 +1047,24 @@ async function startPlayback() {
     });
   });
 
-  // Native transport loop — zero-gap when enabled
-  Tone.Transport.loop = loopEnabled;
-  Tone.Transport.loopStart = 0;
-  Tone.Transport.loopEnd = totalDuration;
-
-  // Schedule stop (only fires when loop is off)
+  // Native transport loop is not compatible with second-scheduled events.
+  // Instead: schedule a callback at the end to restart or stop.
+  Tone.Transport.loop = false;
   const stopId = Tone.Transport.schedule(() => {
-    Tone.Transport.stop();
-    isPlaying = false;
-    setStatus('READY', '');
-    document.getElementById('btnPlay').textContent = '▶ Play';
-    document.getElementById('progressFill').style.width = '0%';
+    if (loopEnabled) {
+      isLoopRestart = true;
+      startPlayback();
+    } else {
+      Tone.Transport.stop();
+      isPlaying = false;
+      setStatus('READY', '');
+      document.getElementById('btnPlay').textContent = '▶ Play';
+      document.getElementById('progressFill').style.width = '0%';
+    }
   }, totalDuration);
+  scheduledIds.push(stopId);
+
+  isLoopRestart = false;
 
   playStartTime = Tone.now();
   Tone.Transport.start();
@@ -1076,6 +1087,7 @@ async function startPlayback() {
 }
 
 function stopPlayback() {
+  isLoopRestart = false;
   Tone.Transport.stop();
   Tone.Transport.cancel();
   scheduledIds = [];

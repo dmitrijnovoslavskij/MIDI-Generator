@@ -987,9 +987,17 @@ async function startPlayback() {
   };
 
   const { tracks, bpm, tpb } = currentMusic;
-  Tone.Transport.bpm.value = bpm;
+  // Schedule purely in seconds — do NOT set Transport.bpm to avoid
+  // Tone.js internal tick/BPM interfering with our manual time math.
 
+  // Calculate totalDuration from the longest track upfront
   totalDuration = 0;
+  Object.values(tracks).forEach(track => {
+    if (!track) return;
+    let t = 0; track.forEach(ev => { t += ev.duration; });
+    const sec = ticksToSeconds(t, bpm, tpb);
+    if (sec > totalDuration) totalDuration = sec;
+  });
 
   // Schedule each track
   Object.entries(tracks).forEach(([trackKey, track]) => {
@@ -1003,20 +1011,17 @@ async function startPlayback() {
       const dur = ev.duration;
       const vel = ev.velocity;
       const startSec = ticksToSeconds(tick, bpm, tpb);
-      const durSec = ticksToSeconds(dur, bpm, tpb);
+      const durSec   = ticksToSeconds(dur,  bpm, tpb);
+      tick += dur;
 
       if (vel > 0 && notes.length > 0) {
         const freqs = notes.filter(n => n > 0).map(midiToFreq);
         if (freqs.length > 0) {
-          const id = Tone.Transport.schedule(time => {
-            synth.triggerAttackRelease(freqs, durSec * 0.92, time, vel / 127);
+          Tone.Transport.schedule(time => {
+            synth.triggerAttackRelease(freqs, Math.max(0.05, durSec * 0.90), time, vel / 127);
           }, startSec);
-          scheduledIds.push(id);
         }
       }
-      tick += dur;
-      const endSec = ticksToSeconds(tick, bpm, tpb);
-      if (endSec > totalDuration) totalDuration = endSec;
     });
   });
 
